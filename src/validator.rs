@@ -1,5 +1,5 @@
 use matches::assert_matches;
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 pub trait Validator: std::fmt::Debug {
     fn validate(&self, value: &Value) -> bool;
@@ -41,6 +41,24 @@ impl Validator for EnumValidator {
     }
 }
 
+#[derive(Debug)]
+struct MinimumValidator {
+    value: Number,
+}
+impl Validator for MinimumValidator {
+    fn validate(&self, value: &Value) -> bool {
+        if let Value::Number(num) = value {
+            if let (Some(n1), Some(n2)) = (self.value.as_f64(), num.as_f64()) {
+                n1 <= n2
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    }
+}
+
 pub fn generate_validator(schema: &Value) -> Result<Box<dyn Validator>, &Value> {
     match schema {
         Value::Object(obj) => {
@@ -67,12 +85,16 @@ pub fn generate_validator(schema: &Value) -> Result<Box<dyn Validator>, &Value> 
             if let Some(val) = obj.get("minimum") {
                 assert!(obj.len() == 1);
                 assert_matches!(val, Value::Number(_));
-                return Ok(Box::new(ConstValidator { value: val.clone() }));
+                if let Value::Number(val) = val {
+                    return Ok(Box::new(MinimumValidator {
+                        value: val.clone(),
+                    }));
+                }
             }
 
             if let Some(val) = obj.get("type") {
                 assert_matches!(val, Value::String(_));
-                unimplemented!();
+                return Err(schema);
             }
 
             Ok(Box::new(ConstValidator {
@@ -89,7 +111,7 @@ pub fn generate_validator(schema: &Value) -> Result<Box<dyn Validator>, &Value> 
         }
 
         _ => {
-            unimplemented!();
+            return Err(schema);
         }
     }
 }
